@@ -1,13 +1,16 @@
 import argparse
 
+from random import randint, shuffle
 from tkinter import Tk, Canvas, Frame, Button, BOTH, TOP, BOTTOM
 
 from sudoku_solver import SudokuSolver
+from utils import get_square_3x3
 
 BOARDS = ['debug']
 MARGIN = 20  # Pixels around the board
 SIDE = 50  # Width of every board cell.
 WIDTH = HEIGHT = MARGIN * 2 + SIDE * 9  # Width and height of the whole board
+counter = 0 # Counter for number of solutions
 
 
 class SudokuError(Exception):
@@ -77,6 +80,15 @@ class SudokuUI(Frame):
             highlightbackground='#3E4149'
         )
         auto_solve_button.pack(fill=BOTH, side=BOTTOM)
+        generate_puzzle_button = Button(
+            self.right_frame,
+            text="Generate new puzzle",
+            width=15,
+            height=2,
+            command=self.__generate_puzzle,
+            highlightbackground='#3E4149'
+        )
+        generate_puzzle_button.pack(fill=BOTH, side=BOTTOM)
 
         self.__draw_grid()
         self.__draw_puzzle()
@@ -186,33 +198,51 @@ class SudokuUI(Frame):
         solver.solve()
         self.__draw_puzzle()
 
+    def __generate_puzzle(self):
+        self.game.start_puzzle = SudokuBoard.create_empty_board()
+        self.game.generate_puzzle(self.game.start_puzzle)
+        self.game.start()
+        self.__draw_puzzle()
+
 
 class SudokuBoard(object):
     """
     Sudoku Board representation
+    Represent sudoku board values
     """
-    def __init__(self, board_file):
-        self.board = self.__create_board(board_file)
+    def __init__(self, board=None, board_file=None):
+        if board_file:
+            self.board = self.__create_board(board_file=board_file)
+        else:
+            self.board = self.__create_board(board=board)
 
-    def __create_board(self, board_file):
+    def __create_board(self, board=[], board_file=None):
         board = []
-        for line in board_file:
-            line = line.strip()
-            if len(line) != 9:
-                raise SudokuError(
-                    "Each line in the sudoku puzzle must be 9 chars long."
-                )
-            board.append([])
-
-            for c in line:
-                if not c.isdigit():
+        if board_file:
+            for line in board_file:
+                line = line.strip()
+                if len(line) != 9:
                     raise SudokuError(
-                        "Valid characters for a sudoku puzzle must be in 0-9"
+                        "Each line in the sudoku puzzle must be 9 chars long."
                     )
-                board[-1].append(int(c))
+                board.append([])
+
+                for c in line:
+                    if not c.isdigit():
+                        raise SudokuError(
+                            "Valid characters for a sudoku puzzle must be in 0-9"
+                        )
+                    board[-1].append(int(c))
 
         if len(board) != 9:
             raise SudokuError("Each sudoku puzzle must be 9 lines long")
+        return board
+
+    @classmethod
+    def create_empty_board(self):
+        board = []
+        for line in range(9):
+            board.append([0, 0, 0, 0, 0, 0, 0, 0, 0])
         return board
 
 
@@ -221,9 +251,13 @@ class SudokuGame(object):
     A Sudoku game, in charge of storing the state of the board and checking
     whether the puzzle is completed.
     """
-    def __init__(self, board_file):
-        self.board_file = board_file
-        self.start_puzzle = SudokuBoard(board_file).board
+
+    def __init__(self, board=None, board_file=None):
+        self.number_list = [1,2,3,4,5,6,7,8,9]
+        if board_file:
+            self.start_puzzle = SudokuBoard(board_file=board_file).board
+        if board:
+            self.start_puzzle = SudokuBoard(board=board).board
 
     def start(self):
         self.game_over = False
@@ -232,7 +266,6 @@ class SudokuGame(object):
             self.puzzle.append([])
             for j in range(9):
                 self.puzzle[i].append(self.start_puzzle[i][j])
-        print(self.puzzle)
 
     def check_win(self):
         for row in range(9):
@@ -247,6 +280,10 @@ class SudokuGame(object):
                     return False
         self.game_over = True
         return True
+
+    def generate_puzzle(self, puzzle):
+        self.__fill_grid(puzzle)
+        self.__remove_random_grid_values()
 
     def __check_block(self, block):
         return set(block) == set(range(1, 10))
@@ -268,12 +305,111 @@ class SudokuGame(object):
             ]
         )
 
+    def __check_grid(self, grid):
+        for row in range(0,9):
+            for col in range(0,9):
+                if grid[row][col]==0:
+                    return False
+
+        #We have a complete grid!  
+        return True 
+
+    def __fill_grid(self, grid):
+        #Find next empty cell
+        for i in range(0, 81):
+            row = i // 9
+            column = i % 9
+            if grid[row][column] == 0:
+                shuffle(self.number_list)      
+                for value in self.number_list:
+                    #Check that this value has not already be used on this row
+                    if not(value in grid[row]):
+                        #Check that this value has not already be used on this column
+                        if not value in (grid[0][column], grid[1][column], grid[2][column], grid[3][column], grid[4][column], grid[5][column], grid[6][column], grid[7][column], grid[8][column]):
+                            #Identify which of the 9 squares we are working on
+                            # E.g.
+                            # square = [
+                            #           [1][2][3],
+                            #           [4][5][6],
+                            #           [7][8][9]
+                            #          ]
+                            square = get_square_3x3(grid, row, column)
+                            #Check that this value has not already be used on this 3x3 square
+                            #Square contains 3 list of array of values for each row
+                            if not value in (square[0] + square[1] + square[2]):
+                                grid[row][column] = value
+                                if self.__check_grid(grid):
+                                    return True
+                                else:
+                                    if self.__fill_grid(grid):
+                                        return True
+                break
+        grid[row][column]=0
+        self.start_puzzle = grid
+
+    def __remove_random_grid_values(self):
+        global counter
+        grid = self.start_puzzle
+        row = randint(0, 8)
+        column = randint(0, 8)
+
+        attempts = 5 # Number of attemps trying new position when multiple solution found
+        
+        # Remove values from grid until all attempts used
+        while attempts>0:
+            while grid[row][column] == 0:
+                row = randint(0, 8)
+                column = randint(0, 8)
+            
+            backup = grid[row][column]
+            grid[row][column] = 0
+            copy_grid = []
+            for r in range(0,9):
+                copy_grid.append([])
+                for c in range(0,9):
+                    copy_grid[r].append(grid[r][c])
+            counter = 0
+            self.fill_solve(copy_grid)
+
+            # If counter > 1 means multiple solution found
+            if counter!=1:
+                grid[row][column]=backup
+                attempts -= 1
+
+
+        # print(grid)
+        self.start_puzzle = grid
+
+    def fill_solve(self, grid):
+        global counter
+        for i in range(0,81):
+            row = i // 9
+            column = i % 9
+            if grid[row][column]==0:
+                for value in range (1,10):
+                    #Check that this value has not already be used on this row
+                    if not(value in grid[row]):
+                    #Check that this value has not already be used on this column
+                        if not value in (grid[0][column], grid[1][column], grid[2][column], grid[3][column], grid[4][column], grid[5][column], grid[6][column], grid[7][column], grid[8][column]):
+                        #Identify which of the 9 squares we are working on
+                            square = get_square_3x3(grid, row, column)
+                            if not value in (square[0] + square[1] + square[2]):
+                                grid[row][column]=value
+                                if SudokuSolver.check_grid(grid):
+                                    counter += 1
+                                    break
+                                else:
+                                    if self.fill_solve(grid):
+                                        return True
+                break
+        grid[row][column]=0
+
 
 if __name__ == '__main__':
     board_name = parse_arguments()
 
-    with open('%s.sudoku' % board_name, 'r') as boards_file:
-        game = SudokuGame(boards_file)
+    with open('%s.sudoku' % board_name, 'r') as board_file:
+        game = SudokuGame(board_file=board_file)
         game.start()
 
         root = Tk()
