@@ -6,7 +6,6 @@ from tkinter import Tk, Canvas, Frame, Button, BOTH, TOP, BOTTOM
 from sudoku_solver import SudokuSolver
 from utils import get_square_3x3
 
-BOARDS = ['debug']
 MARGIN = 20  # Pixels around the board
 SIDE = 50  # Width of every board cell.
 WIDTH = HEIGHT = MARGIN * 2 + SIDE * 9  # Width and height of the whole board
@@ -24,14 +23,12 @@ def parse_arguments():
     """
     Parses arguments of the form:
         sudoku.py <board name>
-    Where `board name` must be in the `BOARD` list
     """
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument("--board",
                             help="Desired board name",
                             type=str,
-                            choices=BOARDS,
-                            required=True)
+                            required=False)
 
     # Creates a dictionary of keys = argument flag, and value = argument
     args = vars(arg_parser.parse_args())
@@ -204,6 +201,12 @@ class SudokuUI(Frame):
         self.game.start()
         self.__draw_puzzle()
 
+    def __undo_move(self):
+        self.move_stack = []
+
+    def __erase_cell(self):
+        print("ERASE");
+
 
 class SudokuBoard(object):
     """
@@ -256,8 +259,10 @@ class SudokuGame(object):
         self.number_list = [1,2,3,4,5,6,7,8,9]
         if board_file:
             self.start_puzzle = SudokuBoard(board_file=board_file).board
-        if board:
+        elif board:
             self.start_puzzle = SudokuBoard(board=board).board
+        else:
+            self.generate_puzzle(SudokuBoard.create_empty_board())
 
     def start(self):
         self.game_over = False
@@ -407,12 +412,15 @@ class SudokuGame(object):
 
 if __name__ == '__main__':
     board_name = parse_arguments()
+    game = SudokuGame()
+    if board_name:
+        with open('%s.sudoku' % board_name, 'r') as board_file:
+            game = SudokuGame(board_file=board_file)
 
-    with open('%s.sudoku' % board_name, 'r') as board_file:
-        game = SudokuGame(board_file=board_file)
-        game.start()
+    game.start()
 
-        root = Tk()
-        SudokuUI(root, game)
-        root.geometry("%dx%d" % (WIDTH*1.6, HEIGHT + 80))
-        root.mainloop()
+    root = Tk()
+    SudokuUI(root, game)
+    root.geometry("%dx%d" % (WIDTH*1.6, HEIGHT + 80))
+    root.mainloop()
+    
